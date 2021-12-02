@@ -357,7 +357,7 @@ class GoogleDriveHelper:
         self.is_cloning = True
         self.start_time = time.time()
         self.total_files = 0
-        self.total_folders = 0      
+        self.total_folders = 0
         try:
             file_id = self.getIdFromUrl(link)
         except (KeyError,IndexError):
@@ -377,7 +377,7 @@ class GoogleDriveHelper:
                     LOGGER.info(f"{msg}")
                     return "your clone has been stopped and cloned data has been deleted!", "cancelled"
                 msg += f'<b>🗂️ ꜰɪʟᴇɴᴀᴍᴇ : </b><code>{meta.get("name")}</code>\n<b>📦 ꜱɪᴢᴇ : </b><code>{get_readable_file_size(self.transferred_size)}</code>'
-                msg += f'\n<b>⚙️ ᴛʏᴘᴇ : </b><code>Folder</code>'
+                msg += '\n<b>⚙️ ᴛʏᴘᴇ : </b><code>Folder</code>'
                 msg += f'\n<b>📚 ꜱᴜʙꜰᴏʟᴅᴇʀꜱ : </b><code>{self.total_folders}</code>'
                 msg += f'\n<b>📁 ꜰɪʟᴇꜱ : </b><code>{self.total_files}</code>'
                 buttons = button_build.ButtonMaker()
