@@ -1,13 +1,14 @@
-import requests
 import itertools
-import time
-import html
 
+from requests import get as rget
+from time import sleep
+from threading import Thread
+from html import escape
 from urllib.parse import quote
 from telegram import InlineKeyboardMarkup
 from telegram.ext import CommandHandler, CallbackQueryHandler
 
-from bot import dispatcher, LOGGER, SEARCH_API_LINK, get_client, SEARCH_PLUGINS
+from bot import dispatcher, LOGGER, SEARCH_API_LINK, SEARCH_PLUGINS, get_client
 from bot.helper.ext_utils.telegraph_helper import telegraph
 from bot.helper.telegram_helper.message_utils import editMessage, sendMessage, sendMarkup
 from bot.helper.telegram_helper.filters import CustomFilters
@@ -15,22 +16,39 @@ from bot.helper.telegram_helper.bot_commands import BotCommands
 from bot.helper.ext_utils.bot_utils import get_readable_file_size
 from bot.helper.telegram_helper import button_build
 
-PLUGINS = []
+if SEARCH_PLUGINS is not None:
+    PLUGINS = []
+    qbclient = get_client()
+    qb_plugins = qbclient.search_plugins()
+    if qb_plugins:
+        for plugin in qb_plugins:
+            qbclient.search_uninstall_plugin(names=plugin['name'])
+    qbclient.search_install_plugin(SEARCH_PLUGINS)
+    qbclient.auth_log_out()
 
 SITES = {
     "1337x": "1337x",
-    "nyaasi": "NyaaSi",
     "yts": "YTS",
-    "piratebay": "PirateBay",
-    "torlock": "Torlock",
-    "eztv": "EzTvio",
+    "eztv": "EzTv",
     "tgx": "TorrentGalaxy",
+    "torlock": "Torlock",
+    "piratebay": "PirateBay",
+    "nyaasi": "NyaaSi",
     "rarbg": "Rarbg",
     "ettv": "Ettv",
+    "zooqle": "Zooqle",
+    "kickass": "KickAss",
+    "bitsearch": "Bitsearch",
+    "glodls": "Glodls",
+    "magnetdl": "MagnetDL",
+    "limetorrent": "LimeTorrent",
+    "torrentfunk": "TorrentFunk",
+    "torrentproject": "TorrentProject",
     "all": "All"
 }
 
-SEARCH_LIMIT = 300
+SEARCH_LIMIT = 200
+
 
 def torser(update, context):
     user_id = update.message.from_user.id
@@ -46,10 +64,10 @@ def torser(update, context):
         button = InlineKeyboardMarkup(buttons.build_menu(2))
         sendMarkup('Choose tool to search:', context.bot, update, button)
     elif SEARCH_API_LINK is not None and SEARCH_PLUGINS is None:
-        button = api_buttons(user_id)
+        button = _api_buttons(user_id)
         sendMarkup('Choose site to search:', context.bot, update, button)
     elif SEARCH_API_LINK is None and SEARCH_PLUGINS is not None:
-        button = plugin_buttons(user_id)
+        button = _plugin_buttons(user_id)
         sendMarkup('Choose site to search:', context.bot, update, button)
     else:
         return sendMessage("No API link or search PLUGINS added for this function", context.bot, update)
@@ -64,10 +82,12 @@ def torserbut(update, context):
     if user_id != int(data[1]):
         query.answer(text="Not Yours!", show_alert=True)
     elif data[2] == 'api':
-        button = api_buttons(user_id)
+        query.answer()
+        button = _api_buttons(user_id)
         editMessage('Choose site to search:', message, button)
     elif data[2] == 'plugin':
-        button = plugin_buttons(user_id)
+        query.answer()
+        button = _plugin_buttons(user_id)
         editMessage('Choose site to search:', message, button)
     elif data[2] != "cancel":
         query.answer()
@@ -77,17 +97,17 @@ def torserbut(update, context):
             editMessage(f"<b>Searching for <i>{key}</i>\nTorrent Site:- <i>{SITES.get(site)}</i></b>", message)
         else:
             editMessage(f"<b>Searching for <i>{key}</i>\nTorrent Site:- <i>{site.capitalize()}</i></b>", message)
-        search(key, site, message, tool)
+        Thread(target=_search, args=(key, site, message, tool)).start()
     else:
         query.answer()
         editMessage("Search has been canceled!", message)
 
-def search(key, site, message, tool):
+def _search(key, site, message, tool):
     LOGGER.info(f"Searching: {key} from {site}")
     if tool == 'api':
         api = f"{SEARCH_API_LINK}/api/{site}/{key}"
         try:
-            resp = requests.get(api)
+            resp = rget(api)
             search_results = resp.json()
             if site == "all":
                 search_results = list(itertools.chain.from_iterable(search_results))
@@ -115,7 +135,7 @@ def search(key, site, message, tool):
             msg += f" <b>result for <i>{key}</i>\nTorrent Site:- <i>{site.capitalize()}</i></b>"
         else:
             return editMessage(f"No result found for <i>{key}</i>\nTorrent Site:- <i>{site.capitalize()}</i>", message)
-    link = getResult(search_results, key, message, tool)
+    link = _getResult(search_results, key, message, tool)
     buttons = button_build.ButtonMaker()
     buttons.buildbutton("🔎 VIEW", link)
     button = InlineKeyboardMarkup(buttons.build_menu(1))
@@ -123,19 +143,18 @@ def search(key, site, message, tool):
     if tool != 'api':
         client.search_delete(search_id=search_id)
 
-def getResult(search_results, key, message, tool):
+def _getResult(search_results, key, message, tool):
     telegraph_content = []
     msg = f"<h4>Search Result For {key}</h4>"
     for index, result in enumerate(search_results, start=1):
         if tool == 'api':
             try:
-                msg += f"<code><a href='{result['Url']}'>{html.escape(result['Name'])}</a></code><br>"
+                msg += f"<code><a href='{result['Url']}'>{escape(result['Name'])}</a></code><br>"
                 if "Files" in result.keys():
                     for subres in result['Files']:
                         msg += f"<b>Quality: </b>{subres['Quality']} | <b>Size: </b>{subres['Size']}<br>"
                         try:
-                            msg += f"<b>Share link to</b> <a href='http://t.me/share/url?url={subres['Torrent']}'>Telegram</a><br>"
-                            msg += f"<b>Link: </b><code>{subres['Torrent']}</code><br>"
+                            msg += f"<a href='{subres['Torrent']}'>Direct Link</a><br>"
                         except KeyError:
                             msg += f"<b>Share Magnet to</b> <a href='http://t.me/share/url?url={subres['Magnet']}'>Telegram</a><br>"
                 else:
@@ -146,9 +165,13 @@ def getResult(search_results, key, message, tool):
             try:
                 msg += f"<b>Share Magnet to</b> <a href='http://t.me/share/url?url={quote(result['Magnet'])}'>Telegram</a><br><br>"
             except KeyError:
+                pass
+            try:
+                msg += f"<a href='{result['Torrent']}'>Direct Link</a><br><br>"
+            except KeyError:
                 msg += "<br>"
         else:
-            msg += f"<a href='{result.descrLink}'>{html.escape(result.fileName)}</a><br>"
+            msg += f"<a href='{result.descrLink}'>{escape(result.fileName)}</a><br>"
             msg += f"<b>Size: </b>{get_readable_file_size(result.fileSize)}<br>"
             msg += f"<b>Seeders: </b>{result.nbSeeders} | <b>Leechers: </b>{result.nbLeechers}<br>"
             link = result.fileUrl
@@ -172,13 +195,13 @@ def getResult(search_results, key, message, tool):
                 title='Mirror-leech-bot Torrent Search',
                 content=content
             )["path"] for content in telegraph_content]
-    time.sleep(0.5)
+    sleep(0.5)
     if len(path) > 1:
         editMessage(f"<b>Editing</b> {len(telegraph_content)} <b>Telegraph pages.</b>", message)
-        edit_telegraph(path, telegraph_content)
+        _edit_telegraph(path, telegraph_content)
     return f"https://telegra.ph/{path[0]}"
 
-def edit_telegraph(path, telegraph_content):
+def _edit_telegraph(path, telegraph_content):
     nxt_page = 1
     prev_page = 0
     num_of_path = len(path)
@@ -200,7 +223,7 @@ def edit_telegraph(path, telegraph_content):
         )
     return
 
-def api_buttons(user_id):
+def _api_buttons(user_id):
     buttons = button_build.ButtonMaker()
     for data, name in SITES.items():
         buttons.sbutton(name, f"torser {user_id} {data} api")
@@ -208,13 +231,14 @@ def api_buttons(user_id):
     button = InlineKeyboardMarkup(buttons.build_menu(2))
     return button
 
-def plugin_buttons(user_id):
+def _plugin_buttons(user_id):
     buttons = button_build.ButtonMaker()
     if not PLUGINS:
-        client = get_client()
-        sites = client.search_plugins()
-        for name in sites:
+        qbclient = get_client()
+        pl = qbclient.search_plugins()
+        for name in pl:
             PLUGINS.append(name['name'])
+        qbclient.auth_log_out()
     for siteName in PLUGINS:
         buttons.sbutton(siteName.capitalize(), f"torser {user_id} {siteName} plugin")
     buttons.sbutton('All', f"torser {user_id} all plugin")
